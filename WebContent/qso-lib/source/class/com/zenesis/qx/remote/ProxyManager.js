@@ -90,8 +90,7 @@ qx.Class.define("com.zenesis.qx.remote.ProxyManager", {
     timeout: {
       init: null,
       check: "Integer",
-      nullable: true,
-      apply: "_applyTimeout"
+      nullable: true
     }
   },
 
@@ -1512,6 +1511,11 @@ qx.Class.define("com.zenesis.qx.remote.ProxyManager", {
         delete this.__dirtyArrays[value.toHashCode()];
       }
 
+      /**
+       * com.zenesis.qx.remote.Map and com.zenesis.qx.remote.ArrayList need to send their clientIds
+       * and have custom restore so that they are not recreated when they come back from the client
+       */
+
       if (value instanceof com.zenesis.qx.remote.Map) {
         var result = {};
         for (var keys = value.getKeys(), i = 0; i < keys.getLength(); i++) {
@@ -1519,6 +1523,26 @@ qx.Class.define("com.zenesis.qx.remote.ProxyManager", {
           result[key] = this.serializeValue(value.get(key), opts);
         }
         return result;
+      }
+
+      if (value instanceof com.zenesis.qx.remote.collections.ArrayList) {
+        console.log("aaa");
+        /*
+        var result = {
+          serverId: value.getServerId(),
+          kind: "ArrayList",
+          values: value.toArray().map(item => this.serializeValue(item, opts))
+        };
+        return result;
+        */
+      }
+
+      if (qx.Class.hasMixin(value.constructor, com.zenesis.qx.remote.MProxy)) {
+        var id = value.getServerId();
+        if (id < 0) {
+          this._queueClientObject(0 - id);
+        }
+        return value.getServerId();
       }
 
       if (value instanceof qx.data.Array) {
@@ -1546,14 +1570,6 @@ qx.Class.define("com.zenesis.qx.remote.ProxyManager", {
           value = null;
         }
         return value;
-      }
-
-      if (qx.Class.hasMixin(value.constructor, com.zenesis.qx.remote.MProxy)) {
-        var id = value.getServerId();
-        if (id < 0) {
-          this._queueClientObject(0 - id);
-        }
-        return value.getServerId();
       }
 
       if (value instanceof qx.core.Object) {
@@ -1755,6 +1771,9 @@ qx.Class.define("com.zenesis.qx.remote.ProxyManager", {
             }
           });
         }
+        if (data.type == "order" || (info.order && (info.added.length || info.removed.length))) {
+          info.order = this.serializeValue(array.toArray());
+        }
       } else {
         if (!info.put) {
           info.put = {};
@@ -1801,7 +1820,9 @@ qx.Class.define("com.zenesis.qx.remote.ProxyManager", {
         if (info.array instanceof qx.data.Array) {
           queue.removed = this.serializeValue(info.removed);
           queue.added = this.serializeValue(info.added);
-          queue.array = this.serializeValue(info.array);
+          if (info.order) {
+            queue.order = this.serializeValue(info.order);
+          }
 
           // Must be a Map
         } else {
@@ -1944,6 +1965,9 @@ qx.Class.define("com.zenesis.qx.remote.ProxyManager", {
       this.__setPropertyObject = serverObject;
       this.__setPropertyName = propertyName;
 
+      if (serverObject.classname == "uk.co.spar.app.qa.QaRevision$PalmOilIngredient" && propertyName == "children" && value) {
+        console.log(serverObject.classname + "." + propertyName + " being set");
+      }
       var def = qx.Class.getPropertyDefinition(serverObject.constructor, propertyName);
       var upname = qx.lang.String.firstUp(propertyName);
 
@@ -2385,6 +2409,11 @@ qx.Class.define("com.zenesis.qx.remote.ProxyManager", {
           }
         }
         clazz = clazz.superclass;
+      }
+
+      if (clientObject instanceof com.zenesis.qx.remote.collections.ArrayList) {
+        data.valueTypes = clientObject.toArray().map(value => !!(value && qx.Class.hasMixin(value.constructor, com.zenesis.qx.remote.MProxy)));
+        data.values = clientObject.toArray().map(value => this.serializeValue(value));
       }
 
       queue[queue.length] = data;
